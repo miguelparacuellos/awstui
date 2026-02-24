@@ -1,0 +1,25 @@
+{
+  "name": "aws-tui",
+  "version": "1.0.0",
+  "description": "Terminal UI tool to manage AWS resources",
+  "main": "src/index.tsx",
+  "scripts": {
+    "dev": "tsx src/index.tsx"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@inkjs/ui": "^2.0.0",
+    "ink": "^6.8.0",
+    "ink-scroll-list": "^0.4.1",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
