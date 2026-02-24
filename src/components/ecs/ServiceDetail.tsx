@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
-import { ScrollList } from 'ink-scroll-list';
 import { useAppState, useAppDispatch } from '../../state/index.js';
 import { Layout } from '../Layout.js';
 import { getServiceDetail, type ServiceDetail as ServiceDetailType, type Deployment } from '../../aws/ecs.js';
 import { ConfirmDeploy } from './ConfirmDeploy.js';
+
+// Layout overhead (10) + task counts box (~8 rows)
+const LAYOUT_OVERHEAD = 18;
 
 function formatRelativeTime(date: Date | undefined): string {
   if (date === undefined) return 'unknown';
@@ -47,7 +49,10 @@ export function ServiceDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
   const fetchDetail = useCallback(async () => {
     if (!activeProfile || !clusterArn || !serviceArn) return;
@@ -57,6 +62,7 @@ export function ServiceDetail() {
       const result = await getServiceDetail(activeProfile, clusterArn, serviceArn);
       setDetail(result);
       setSelectedIndex(0);
+      setScrollOffset(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch service detail');
     } finally {
@@ -87,11 +93,15 @@ export function ServiceDetail() {
       return;
     }
     if (key.downArrow && detail) {
-      setSelectedIndex((prev) => Math.min(prev + 1, detail.deployments.length - 1));
+      const next = Math.min(selectedIndex + 1, detail.deployments.length - 1);
+      setSelectedIndex(next);
+      setScrollOffset((prev) => Math.max(prev, next - visibleRows + 1));
       return;
     }
     if (key.upArrow) {
-      setSelectedIndex((prev) => Math.max(prev - 1, 0));
+      const next = Math.max(selectedIndex - 1, 0);
+      setSelectedIndex(next);
+      setScrollOffset((prev) => Math.min(prev, next));
       return;
     }
   });
@@ -108,6 +118,7 @@ export function ServiceDetail() {
     if (!detail) return <Text color="yellow">Service not found</Text>;
 
     const color = taskCountColor(detail.runningCount, detail.desiredCount, detail.pendingCount);
+    const visibleDeployments = detail.deployments.slice(scrollOffset, scrollOffset + visibleRows);
 
     return (
       <Box flexDirection="column" gap={1}>
@@ -122,19 +133,22 @@ export function ServiceDetail() {
         </Box>
 
         <Box flexDirection="column" borderStyle="round" borderColor="gray" padding={1}>
-          <Text bold>Deployments ({detail.deployments.length})</Text>
+          <Text bold>
+            Deployments ({detail.deployments.length}){detail.deployments.length > 0 ? ` · ${selectedIndex + 1}/${detail.deployments.length}` : ''}
+          </Text>
           {detail.deployments.length === 0 ? (
             <Text color="yellow" dimColor>No deployments</Text>
           ) : (
-            <Box marginTop={1}>
-              <ScrollList height={10} selectedIndex={selectedIndex}>
-                {detail.deployments.map((d, i) => (
+            <Box marginTop={1} flexDirection="column">
+              {visibleDeployments.map((d, i) => {
+                const actualIndex = scrollOffset + i;
+                return (
                   <Box key={d.id} gap={2}>
                     <Text
                       color={deploymentStatusColor(d.status)}
                       bold={d.status === 'PRIMARY' || d.status === 'IN_PROGRESS'}
                     >
-                      {i === selectedIndex ? '> ' : '  '}
+                      {actualIndex === selectedIndex ? '> ' : '  '}
                       {d.status}
                     </Text>
                     <Text>
@@ -145,8 +159,8 @@ export function ServiceDetail() {
                     )}
                     <Text dimColor>{formatRelativeTime(d.updatedAt)}</Text>
                   </Box>
-                ))}
-              </ScrollList>
+                );
+              })}
             </Box>
           )}
         </Box>

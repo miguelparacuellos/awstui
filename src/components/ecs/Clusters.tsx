@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
-import { ScrollList } from 'ink-scroll-list';
 import { useAppState, useAppDispatch } from '../../state/index.js';
 import { Layout } from '../Layout.js';
 import { listClusters, type Cluster } from '../../aws/ecs.js';
+
+const LAYOUT_OVERHEAD = 10;
 
 function statusColor(cluster: Cluster): string {
   if (cluster.status !== 'ACTIVE') return 'red';
@@ -20,6 +21,9 @@ export function Clusters() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
   const fetchClusters = useCallback(async () => {
     if (!activeProfile) return;
@@ -29,6 +33,7 @@ export function Clusters() {
       const result = await listClusters(activeProfile);
       setClusters(result);
       setSelectedIndex(0);
+      setScrollOffset(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch clusters');
     } finally {
@@ -50,11 +55,15 @@ export function Clusters() {
       return;
     }
     if (key.downArrow) {
-      setSelectedIndex((prev) => Math.min(prev + 1, clusters.length - 1));
+      const next = Math.min(selectedIndex + 1, clusters.length - 1);
+      setSelectedIndex(next);
+      setScrollOffset((prev) => Math.max(prev, next - visibleRows + 1));
       return;
     }
     if (key.upArrow) {
-      setSelectedIndex((prev) => Math.max(prev - 1, 0));
+      const next = Math.max(selectedIndex - 1, 0);
+      setSelectedIndex(next);
+      setScrollOffset((prev) => Math.min(prev, next));
       return;
     }
     if (key.return && clusters.length > 0) {
@@ -73,28 +82,35 @@ export function Clusters() {
     ? `${activeProfile.name}${activeProfile.region ? ` · ${activeProfile.region}` : ''}`
     : '';
   const header = `aws-tui [${profileLabel}] › ECS${!isLoading ? ` (${clusters.length} clusters)` : ''}`;
-  const footer = '↑↓ navigate · enter select · r refresh · esc back';
+  const footer = clusters.length > 0
+    ? `↑↓ navigate · enter select · ${selectedIndex + 1}/${clusters.length} · r refresh · esc back`
+    : '↑↓ navigate · enter select · r refresh · esc back';
 
   function renderContent() {
     if (isLoading) return <Spinner label="Loading clusters..." />;
     if (error !== null) return <Text color="red">Error: {error}</Text>;
     if (clusters.length === 0) return <Text color="yellow">No ECS clusters found</Text>;
 
+    const visible = clusters.slice(scrollOffset, scrollOffset + visibleRows);
+
     return (
-      <ScrollList height={15} selectedIndex={selectedIndex}>
-        {clusters.map((c, i) => (
-          <Box key={c.arn} gap={2}>
-            <Text color={i === selectedIndex ? 'cyan' : 'white'} bold={i === selectedIndex}>
-              {i === selectedIndex ? '> ' : '  '}
-              {c.name}
-            </Text>
-            <Text color={statusColor(c)}>● {c.status}</Text>
-            <Text dimColor>
-              {c.runningTasksCount} running · {c.pendingTasksCount} pending · {c.activeServicesCount} services
-            </Text>
-          </Box>
-        ))}
-      </ScrollList>
+      <Box flexDirection="column">
+        {visible.map((c, i) => {
+          const actualIndex = scrollOffset + i;
+          return (
+            <Box key={c.arn} gap={2}>
+              <Text color={actualIndex === selectedIndex ? 'cyan' : 'white'} bold={actualIndex === selectedIndex}>
+                {actualIndex === selectedIndex ? '> ' : '  '}
+                {c.name}
+              </Text>
+              <Text color={statusColor(c)}>● {c.status}</Text>
+              <Text dimColor>
+                {c.runningTasksCount} running · {c.pendingTasksCount} pending · {c.activeServicesCount} services
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
     );
   }
 

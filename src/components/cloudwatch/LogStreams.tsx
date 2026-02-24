@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
-import { ScrollList } from 'ink-scroll-list';
 import { useAppState, useAppDispatch } from '../../state/index.js';
 import { Layout } from '../Layout.js';
 import { listLogStreams, type LogStream } from '../../aws/cloudwatch.js';
+
+const LAYOUT_OVERHEAD = 10;
 
 function formatRelativeTime(timestamp: number | undefined): string {
   if (timestamp === undefined) return 'no events';
@@ -36,6 +37,9 @@ export function LogStreams() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
   const fetchStreams = useCallback(async () => {
     if (!activeProfile || !logGroupName) return;
@@ -45,6 +49,7 @@ export function LogStreams() {
       const result = await listLogStreams(activeProfile, logGroupName);
       setStreams(result);
       setSelectedIndex(0);
+      setScrollOffset(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch log streams');
     } finally {
@@ -66,11 +71,15 @@ export function LogStreams() {
       return;
     }
     if (key.downArrow) {
-      setSelectedIndex((prev) => Math.min(prev + 1, streams.length - 1));
+      const next = Math.min(selectedIndex + 1, streams.length - 1);
+      setSelectedIndex(next);
+      setScrollOffset((prev) => Math.max(prev, next - visibleRows + 1));
       return;
     }
     if (key.upArrow) {
-      setSelectedIndex((prev) => Math.max(prev - 1, 0));
+      const next = Math.max(selectedIndex - 1, 0);
+      setSelectedIndex(next);
+      setScrollOffset((prev) => Math.min(prev, next));
       return;
     }
     if (key.return && streams.length > 0) {
@@ -89,27 +98,34 @@ export function LogStreams() {
     ? `${activeProfile.name}${activeProfile.region ? ` · ${activeProfile.region}` : ''}`
     : '';
   const header = `aws-tui [${profileLabel}] › CloudWatch › ${logGroupName}${!isLoading ? ` (${streams.length} streams)` : ''}`;
-  const footer = '↑↓ navigate · enter select · r refresh · esc back';
+  const footer = streams.length > 0
+    ? `↑↓ navigate · enter select · ${selectedIndex + 1}/${streams.length} · r refresh · esc back`
+    : '↑↓ navigate · enter select · r refresh · esc back';
 
   function renderContent() {
     if (isLoading) return <Spinner label="Loading log streams..." />;
     if (error !== null) return <Text color="red">Error: {error}</Text>;
     if (streams.length === 0) return <Text color="yellow">No log streams found</Text>;
 
+    const visible = streams.slice(scrollOffset, scrollOffset + visibleRows);
+
     return (
-      <ScrollList height={15} selectedIndex={selectedIndex}>
-        {streams.map((s, i) => (
-          <Box key={s.name}>
-            <Text color={i === selectedIndex ? 'cyan' : 'white'} bold={i === selectedIndex}>
-              {i === selectedIndex ? '> ' : '  '}
-              {s.name}
-            </Text>
-            <Text color={timeColor(s.lastEventTime)}>
-              {'  '}{formatRelativeTime(s.lastEventTime)}
-            </Text>
-          </Box>
-        ))}
-      </ScrollList>
+      <Box flexDirection="column">
+        {visible.map((s, i) => {
+          const actualIndex = scrollOffset + i;
+          return (
+            <Box key={s.name}>
+              <Text color={actualIndex === selectedIndex ? 'cyan' : 'white'} bold={actualIndex === selectedIndex}>
+                {actualIndex === selectedIndex ? '> ' : '  '}
+                {s.name}
+              </Text>
+              <Text color={timeColor(s.lastEventTime)}>
+                {'  '}{formatRelativeTime(s.lastEventTime)}
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
     );
   }
 

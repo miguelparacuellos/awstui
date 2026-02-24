@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
-import { ScrollList } from 'ink-scroll-list';
 import { useAppState, useAppDispatch } from '../../state/index.js';
 import { Layout } from '../Layout.js';
 import { getLogEvents, type LogEvent } from '../../aws/cloudwatch.js';
+
+const LAYOUT_OVERHEAD = 10;
 
 function formatTime(timestamp: number): string {
   const d = new Date(timestamp);
@@ -49,7 +50,9 @@ export function LogEvents() {
   const [events, setEvents] = useState<LogEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
   const fetchEvents = useCallback(async () => {
     if (!activeProfile || !logGroupName || !logStreamName) return;
@@ -58,7 +61,7 @@ export function LogEvents() {
     try {
       const result = await getLogEvents(activeProfile, logGroupName, logStreamName);
       setEvents(result);
-      setSelectedIndex(0);
+      setScrollOffset(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch log events');
     } finally {
@@ -83,11 +86,11 @@ export function LogEvents() {
       return;
     }
     if (key.downArrow) {
-      setSelectedIndex((prev) => Math.min(prev + 1, events.length - 1));
+      setScrollOffset((prev) => Math.min(prev + 1, Math.max(0, events.length - visibleRows)));
       return;
     }
     if (key.upArrow) {
-      setSelectedIndex((prev) => Math.max(prev - 1, 0));
+      setScrollOffset((prev) => Math.max(prev - 1, 0));
       return;
     }
   });
@@ -96,22 +99,26 @@ export function LogEvents() {
     ? `${activeProfile.name}${activeProfile.region ? ` · ${activeProfile.region}` : ''}`
     : '';
   const header = `aws-tui [${profileLabel}] › CloudWatch › ${logGroupName} › ${logStreamName}${!isLoading ? ` (${events.length} events)` : ''}`;
-  const footer = '↑↓ scroll · r refresh · esc back';
+  const footer = events.length > 0
+    ? `↑↓ scroll · line ${scrollOffset + 1}/${events.length} · r refresh · esc back`
+    : '↑↓ scroll · r refresh · esc back';
 
   function renderContent() {
     if (isLoading) return <Spinner label="Loading log events..." />;
     if (error !== null) return <Text color="red">Error: {error}</Text>;
     if (events.length === 0) return <Text color="yellow">No log events found</Text>;
 
+    const visible = events.slice(scrollOffset, scrollOffset + visibleRows);
+
     return (
-      <ScrollList height={20} selectedIndex={selectedIndex}>
-        {events.map((e, i) => (
-          <Box key={`${e.timestamp}-${i}`}>
+      <Box flexDirection="column">
+        {visible.map((e, i) => (
+          <Box key={`${e.timestamp}-${scrollOffset + i}`}>
             <Text dimColor>{formatTime(e.timestamp)} </Text>
             {colorizeMessage(e.message.trimEnd())}
           </Box>
         ))}
-      </ScrollList>
+      </Box>
     );
   }
 
