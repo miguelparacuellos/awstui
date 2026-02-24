@@ -1,27 +1,14 @@
 import React from 'react';
-import { render, useInput, Text } from 'ink';
-import { AppProvider, useAppState, useAppDispatch } from './state/index.js';
+import { render } from 'ink';
+import { AppProvider, useAppState } from './state/index.js';
 import { ProfileSelect } from './components/ProfileSelect.js';
 import { MainMenu } from './components/MainMenu.js';
-import { Layout } from './components/Layout.js';
 import { LogGroups } from './components/cloudwatch/LogGroups.js';
 import { LogStreams } from './components/cloudwatch/LogStreams.js';
 import { LogEvents } from './components/cloudwatch/LogEvents.js';
-
-function Placeholder() {
-  const { currentScreen } = useAppState();
-  const dispatch = useAppDispatch();
-
-  useInput((_input, key) => {
-    if (key.escape) dispatch({ type: 'GO_BACK' });
-  });
-
-  return (
-    <Layout header={`aws-tui › ${currentScreen}`} footer="esc back">
-      <Text dimColor>Coming soon</Text>
-    </Layout>
-  );
-}
+import { Clusters } from './components/ecs/Clusters.js';
+import { Services } from './components/ecs/Services.js';
+import { ServiceDetail } from './components/ecs/ServiceDetail.js';
 
 function Router() {
   const { currentScreen } = useAppState();
@@ -31,10 +18,9 @@ function Router() {
     case 'cw-log-groups': return <LogGroups />;
     case 'cw-log-streams': return <LogStreams />;
     case 'cw-log-events': return <LogEvents />;
-    case 'ecs-clusters':
-    case 'ecs-services':
-    case 'ecs-service-detail':
-      return <Placeholder />;
+    case 'ecs-clusters': return <Clusters />;
+    case 'ecs-services': return <Services />;
+    case 'ecs-service-detail': return <ServiceDetail />;
     default: {
       const _exhaustive: never = currentScreen;
       return _exhaustive;
