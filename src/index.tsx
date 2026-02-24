@@ -4,6 +4,9 @@ import { AppProvider, useAppState, useAppDispatch } from './state/index.js';
 import { ProfileSelect } from './components/ProfileSelect.js';
 import { MainMenu } from './components/MainMenu.js';
 import { Layout } from './components/Layout.js';
+import { LogGroups } from './components/cloudwatch/LogGroups.js';
+import { LogStreams } from './components/cloudwatch/LogStreams.js';
+import { LogEvents } from './components/cloudwatch/LogEvents.js';
 
 function Placeholder() {
   const { currentScreen } = useAppState();
@@ -25,9 +28,9 @@ function Router() {
   switch (currentScreen) {
     case 'profile-select': return <ProfileSelect />;
     case 'main-menu': return <MainMenu />;
-    case 'cw-log-groups':
-    case 'cw-log-streams':
-    case 'cw-log-events':
+    case 'cw-log-groups': return <LogGroups />;
+    case 'cw-log-streams': return <LogStreams />;
+    case 'cw-log-events': return <LogEvents />;
     case 'ecs-clusters':
     case 'ecs-services':
     case 'ecs-service-detail':
