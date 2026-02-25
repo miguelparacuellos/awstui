@@ -78,24 +78,43 @@ export async function listServices(
   clusterArn: string,
 ): Promise<Service[]> {
   const client = createClient(profile);
-  const listResponse = await client.send(
-    new ListServicesCommand({ cluster: clusterArn }),
-  );
-  const arns = listResponse.serviceArns ?? [];
+
+  // Paginate ListServicesCommand to get all ARNs
+  const arns: string[] = [];
+  let nextToken: string | undefined;
+  do {
+    const listResponse = await client.send(
+      new ListServicesCommand({ cluster: clusterArn, nextToken }),
+    );
+    arns.push(...(listResponse.serviceArns ?? []));
+    nextToken = listResponse.nextToken;
+  } while (nextToken);
+
   if (arns.length === 0) return [];
 
-  const describeResponse = await client.send(
-    new DescribeServicesCommand({ cluster: clusterArn, services: arns }),
+  // DescribeServicesCommand accepts max 10 per call — batch in chunks
+  const CHUNK_SIZE = 10;
+  const chunks: string[][] = [];
+  for (let i = 0; i < arns.length; i += CHUNK_SIZE) {
+    chunks.push(arns.slice(i, i + CHUNK_SIZE));
+  }
+
+  const responses = await Promise.all(
+    chunks.map((chunk) =>
+      client.send(new DescribeServicesCommand({ cluster: clusterArn, services: chunk })),
+    ),
   );
 
-  return (describeResponse.services ?? []).map((s) => ({
-    arn: s.serviceArn ?? '',
-    name: s.serviceName ?? '(unknown)',
-    status: s.status ?? 'UNKNOWN',
-    runningCount: s.runningCount ?? 0,
-    pendingCount: s.pendingCount ?? 0,
-    desiredCount: s.desiredCount ?? 0,
-  }));
+  return responses.flatMap((r) =>
+    (r.services ?? []).map((s) => ({
+      arn: s.serviceArn ?? '',
+      name: s.serviceName ?? '(unknown)',
+      status: s.status ?? 'UNKNOWN',
+      runningCount: s.runningCount ?? 0,
+      pendingCount: s.pendingCount ?? 0,
+      desiredCount: s.desiredCount ?? 0,
+    })),
+  );
 }
 
 export async function getServiceDetail(

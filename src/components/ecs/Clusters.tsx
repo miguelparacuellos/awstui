@@ -105,7 +105,7 @@ export function Clusters() {
               </Text>
               <Text color={statusColor(c)}>● {c.status}</Text>
               <Text dimColor>
-                {c.runningTasksCount} running · {c.pendingTasksCount} pending · {c.activeServicesCount} services
+                {c.activeServicesCount} services · {c.pendingTasksCount} pending tasks
               </Text>
             </Box>
           );
