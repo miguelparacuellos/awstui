@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useAppState, useAppDispatch } from '../../state/index.js';
@@ -22,36 +22,41 @@ export function Clusters() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
-  const fetchClusters = useCallback(async () => {
-    if (!activeProfile) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await listClusters(activeProfile);
-      setClusters(result);
-      setSelectedIndex(0);
-      setScrollOffset(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch clusters');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeProfile]);
-
   useEffect(() => {
-    fetchClusters();
-  }, [fetchClusters]);
+    if (!activeProfile) return;
+    const profile = activeProfile;
+    let cancelled = false;
+    async function run() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await listClusters(profile);
+        if (cancelled) return;
+        setClusters(result);
+        setSelectedIndex(0);
+        setScrollOffset(0);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to fetch clusters');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [activeProfile, refreshKey]);
 
   useInput((input, key) => {
     if (key.escape) {
       dispatch({ type: 'GO_BACK' });
       return;
     }
-    if (input === 'r') {
-      fetchClusters();
+    if (input === 'r' && !isLoading) {
+      setRefreshKey((k) => k + 1);
       return;
     }
     if (key.downArrow) {

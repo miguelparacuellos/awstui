@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { Spinner } from '@inkjs/ui';
@@ -7,6 +7,8 @@ import { useAppState, useAppDispatch } from '../../state/index.js';
 import { Layout } from '../Layout.js';
 import { listLogGroups, type LogGroup } from '../../aws/cloudwatch.js';
 import { useDebounce } from '../../hooks/useDebounce.js';
+
+const LAYOUT_OVERHEAD = 10;
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -20,31 +22,40 @@ export function LogGroups() {
   const dispatch = useAppDispatch();
 
   const [groups, setGroups] = useState<LogGroup[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [filter, setFilter] = useState('');
   const [isFiltering, setIsFiltering] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const debouncedFilter = useDebounce(filter, 400);
 
-  const fetchGroups = useCallback(async (filterPattern?: string) => {
-    if (!activeProfile) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await listLogGroups(activeProfile, filterPattern || undefined);
-      setGroups(result);
-      setSelectedIndex(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch log groups');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeProfile]);
+  const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
   useEffect(() => {
-    fetchGroups(debouncedFilter);
-  }, [debouncedFilter, fetchGroups]);
+    if (!activeProfile) return;
+    const profile = activeProfile;
+    let cancelled = false;
+    async function run() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const { groups: result, hasMore: more } = await listLogGroups(profile, debouncedFilter || undefined);
+        if (cancelled) return;
+        setGroups(result);
+        setHasMore(more);
+        setSelectedIndex(0);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to fetch log groups');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [activeProfile, debouncedFilter, refreshKey]);
 
   useEffect(() => {
     setIsFiltering(filter !== debouncedFilter);
@@ -55,8 +66,8 @@ export function LogGroups() {
       dispatch({ type: 'NAVIGATE', payload: { screen: 'main-menu' } });
       return;
     }
-    if (input === 'r') {
-      fetchGroups(debouncedFilter);
+    if (input === 'r' && !isLoading) {
+      setRefreshKey((k) => k + 1);
       return;
     }
     if (key.downArrow) {
@@ -88,20 +99,25 @@ export function LogGroups() {
     if (groups.length === 0) return <Text color="yellow">No log groups found</Text>;
 
     return (
-      <ScrollList height={15} selectedIndex={selectedIndex}>
-        {groups.map((g, i) => (
-          <Box key={g.name}>
-            <Text color={i === selectedIndex ? 'cyan' : 'white'} bold={i === selectedIndex}>
-              {i === selectedIndex ? '> ' : '  '}
-              {g.name}
-            </Text>
-            <Text dimColor>
-              {'  '}{formatBytes(g.storedBytes)}
-              {g.retentionDays !== undefined ? ` · ${g.retentionDays}d retention` : ' · never expire'}
-            </Text>
-          </Box>
-        ))}
-      </ScrollList>
+      <Box flexDirection="column">
+        <ScrollList height={visibleRows} selectedIndex={selectedIndex}>
+          {groups.map((g, i) => (
+            <Box key={g.name}>
+              <Text color={i === selectedIndex ? 'cyan' : 'white'} bold={i === selectedIndex}>
+                {i === selectedIndex ? '> ' : '  '}
+                {g.name}
+              </Text>
+              <Text dimColor>
+                {'  '}{formatBytes(g.storedBytes)}
+                {g.retentionDays !== undefined ? ` · ${g.retentionDays}d retention` : ' · never expire'}
+              </Text>
+            </Box>
+          ))}
+        </ScrollList>
+        {hasMore && (
+          <Text dimColor>showing 50 of many — narrow your filter to see more</Text>
+        )}
+      </Box>
     );
   }
 

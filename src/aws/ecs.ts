@@ -55,22 +55,41 @@ function createClient(profile: Profile): ECSClient {
 
 export async function listClusters(profile: Profile): Promise<Cluster[]> {
   const client = createClient(profile);
-  const listResponse = await client.send(new ListClustersCommand({}));
-  const arns = listResponse.clusterArns ?? [];
+
+  // Paginate ListClusters to get all ARNs
+  const arns: string[] = [];
+  let nextToken: string | undefined;
+  do {
+    const listResponse = await client.send(new ListClustersCommand({ nextToken }));
+    arns.push(...(listResponse.clusterArns ?? []));
+    nextToken = listResponse.nextToken;
+  } while (nextToken);
+
   if (arns.length === 0) return [];
 
-  const describeResponse = await client.send(
-    new DescribeClustersCommand({ clusters: arns, include: ['STATISTICS'] }),
+  // DescribeClusters accepts max 100 per call — batch in chunks
+  const CHUNK_SIZE = 100;
+  const chunks: string[][] = [];
+  for (let i = 0; i < arns.length; i += CHUNK_SIZE) {
+    chunks.push(arns.slice(i, i + CHUNK_SIZE));
+  }
+
+  const responses = await Promise.all(
+    chunks.map((chunk) =>
+      client.send(new DescribeClustersCommand({ clusters: chunk, include: ['STATISTICS'] })),
+    ),
   );
 
-  return (describeResponse.clusters ?? []).map((c) => ({
-    arn: c.clusterArn ?? '',
-    name: c.clusterName ?? '(unknown)',
-    status: c.status ?? 'UNKNOWN',
-    runningTasksCount: c.runningTasksCount ?? 0,
-    pendingTasksCount: c.pendingTasksCount ?? 0,
-    activeServicesCount: c.activeServicesCount ?? 0,
-  }));
+  return responses.flatMap((r) =>
+    (r.clusters ?? []).map((c) => ({
+      arn: c.clusterArn ?? '',
+      name: c.clusterName ?? '(unknown)',
+      status: c.status ?? 'UNKNOWN',
+      runningTasksCount: c.runningTasksCount ?? 0,
+      pendingTasksCount: c.pendingTasksCount ?? 0,
+      activeServicesCount: c.activeServicesCount ?? 0,
+    })),
+  );
 }
 
 export async function listServices(

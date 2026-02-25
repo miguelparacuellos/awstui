@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useAppState, useAppDispatch } from '../../state/index.js';
@@ -25,36 +25,41 @@ export function Services() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
-  const fetchServices = useCallback(async () => {
-    if (!activeProfile || !clusterArn) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await listServices(activeProfile, clusterArn);
-      setServices(result);
-      setSelectedIndex(0);
-      setScrollOffset(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch services');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeProfile, clusterArn]);
-
   useEffect(() => {
-    fetchServices();
-  }, [fetchServices]);
+    if (!activeProfile || !clusterArn) return;
+    const profile = activeProfile;
+    let cancelled = false;
+    async function run() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await listServices(profile, clusterArn);
+        if (cancelled) return;
+        setServices(result);
+        setSelectedIndex(0);
+        setScrollOffset(0);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to fetch services');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [activeProfile, clusterArn, refreshKey]);
 
   useInput((input, key) => {
     if (key.escape) {
       dispatch({ type: 'NAVIGATE', payload: { screen: 'ecs-clusters' } });
       return;
     }
-    if (input === 'r') {
-      fetchServices();
+    if (input === 'r' && !isLoading) {
+      setRefreshKey((k) => k + 1);
       return;
     }
     if (key.downArrow) {

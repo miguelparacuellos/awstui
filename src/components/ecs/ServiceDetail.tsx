@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useAppState, useAppDispatch } from '../../state/index.js';
@@ -51,28 +51,33 @@ export function ServiceDetail() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
-  const fetchDetail = useCallback(async () => {
-    if (!activeProfile || !clusterArn || !serviceArn) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await getServiceDetail(activeProfile, clusterArn, serviceArn);
-      setDetail(result);
-      setSelectedIndex(0);
-      setScrollOffset(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch service detail');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeProfile, clusterArn, serviceArn]);
-
   useEffect(() => {
-    fetchDetail();
-  }, [fetchDetail]);
+    if (!activeProfile || !clusterArn || !serviceArn) return;
+    const profile = activeProfile;
+    let cancelled = false;
+    async function run() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await getServiceDetail(profile, clusterArn, serviceArn);
+        if (cancelled) return;
+        setDetail(result);
+        setSelectedIndex(0);
+        setScrollOffset(0);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to fetch service detail');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [activeProfile, clusterArn, serviceArn, refreshKey]);
 
   useInput((input, key) => {
     if (showConfirm) return;
@@ -84,8 +89,8 @@ export function ServiceDetail() {
       });
       return;
     }
-    if (input === 'r') {
-      fetchDetail();
+    if (input === 'r' && !isLoading) {
+      setRefreshKey((k) => k + 1);
       return;
     }
     if (input === 'd' && detail) {
@@ -172,7 +177,7 @@ export function ServiceDetail() {
             serviceArn={serviceArn}
             onSuccess={() => {
               setShowConfirm(false);
-              fetchDetail();
+              setRefreshKey((k) => k + 1);
             }}
             onCancel={() => setShowConfirm(false)}
           />

@@ -33,7 +33,7 @@ function createClient(profile: Profile): CloudWatchLogsClient {
 export async function listLogGroups(
   profile: Profile,
   filterPattern?: string,
-): Promise<LogGroup[]> {
+): Promise<{ groups: LogGroup[]; hasMore: boolean }> {
   const client = createClient(profile);
   const command = new DescribeLogGroupsCommand({
     ...(filterPattern ? { logGroupNamePrefix: filterPattern } : {}),
@@ -41,11 +41,14 @@ export async function listLogGroups(
   });
   const response = await client.send(command);
 
-  return (response.logGroups ?? []).map((lg) => ({
-    name: lg.logGroupName ?? '(unknown)',
-    storedBytes: lg.storedBytes ?? 0,
-    retentionDays: lg.retentionInDays,
-  }));
+  return {
+    groups: (response.logGroups ?? []).map((lg) => ({
+      name: lg.logGroupName ?? '(unknown)',
+      storedBytes: lg.storedBytes ?? 0,
+      retentionDays: lg.retentionInDays,
+    })),
+    hasMore: response.nextToken !== undefined,
+  };
 }
 
 export async function listLogStreams(

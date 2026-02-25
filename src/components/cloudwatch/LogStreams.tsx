@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useAppState, useAppDispatch } from '../../state/index.js';
@@ -38,36 +38,41 @@ export function LogStreams() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
-  const fetchStreams = useCallback(async () => {
-    if (!activeProfile || !logGroupName) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await listLogStreams(activeProfile, logGroupName);
-      setStreams(result);
-      setSelectedIndex(0);
-      setScrollOffset(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch log streams');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeProfile, logGroupName]);
-
   useEffect(() => {
-    fetchStreams();
-  }, [fetchStreams]);
+    if (!activeProfile || !logGroupName) return;
+    const profile = activeProfile;
+    let cancelled = false;
+    async function run() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await listLogStreams(profile, logGroupName);
+        if (cancelled) return;
+        setStreams(result);
+        setSelectedIndex(0);
+        setScrollOffset(0);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to fetch log streams');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [activeProfile, logGroupName, refreshKey]);
 
   useInput((input, key) => {
     if (key.escape) {
       dispatch({ type: 'NAVIGATE', payload: { screen: 'cw-log-groups' } });
       return;
     }
-    if (input === 'r') {
-      fetchStreams();
+    if (input === 'r' && !isLoading) {
+      setRefreshKey((k) => k + 1);
       return;
     }
     if (key.downArrow) {

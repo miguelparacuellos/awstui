@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useAppState, useAppDispatch } from '../../state/index.js';
@@ -51,27 +51,32 @@ export function LogEvents() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
-  const fetchEvents = useCallback(async () => {
-    if (!activeProfile || !logGroupName || !logStreamName) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await getLogEvents(activeProfile, logGroupName, logStreamName);
-      setEvents(result);
-      setScrollOffset(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch log events');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeProfile, logGroupName, logStreamName]);
-
   useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+    if (!activeProfile || !logGroupName || !logStreamName) return;
+    const profile = activeProfile;
+    let cancelled = false;
+    async function run() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await getLogEvents(profile, logGroupName, logStreamName);
+        if (cancelled) return;
+        setEvents(result);
+        setScrollOffset(0);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to fetch log events');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [activeProfile, logGroupName, logStreamName, refreshKey]);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -81,8 +86,8 @@ export function LogEvents() {
       });
       return;
     }
-    if (input === 'r') {
-      fetchEvents();
+    if (input === 'r' && !isLoading) {
+      setRefreshKey((k) => k + 1);
       return;
     }
     if (key.downArrow) {
