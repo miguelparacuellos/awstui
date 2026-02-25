@@ -115,6 +115,10 @@ export function ServiceDetail() {
       setRefreshKey((k) => k + 1);
       return;
     }
+    if (input === 'm') {
+      dispatch({ type: 'NAVIGATE', payload: { screen: 'main-menu' } });
+      return;
+    }
     if (input === 'd' && detail) {
       setShowConfirm(true);
       return;
@@ -125,7 +129,7 @@ export function ServiceDetail() {
     ? `${activeProfile.name}${activeProfile.region ? ` · ${activeProfile.region}` : ''}`
     : '';
   const header = `aws-tui [${profileLabel}] › ECS › ${clusterName} › ${serviceName}`;
-  const footer = '↑↓ scroll · d deploy · r refresh · esc back';
+  const footer = '↑↓ scroll · d deploy · r refresh · m menu · esc back';
 
   function renderTaskSummary() {
     const grouped = groupTasksByStatus(tasks);

@@ -14,7 +14,7 @@ export type AppState = {
 
 type AppAction =
   | { type: 'SET_PROFILE'; payload: Profile }
-  | { type: 'NAVIGATE'; payload: { screen: ScreenName; params?: Record<string, string> } }
+  | { type: 'NAVIGATE'; payload: { screen: ScreenName; params?: Record<string, string>; clearProfile?: boolean } }
   | { type: 'GO_BACK' };
 
 const initialState: AppState = {
@@ -26,7 +26,12 @@ const initialState: AppState = {
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_PROFILE': return { ...state, activeProfile: action.payload };
-    case 'NAVIGATE': return { ...state, currentScreen: action.payload.screen, screenParams: action.payload.params ?? {} };
+    case 'NAVIGATE': return {
+      ...state,
+      currentScreen: action.payload.screen,
+      screenParams: action.payload.params ?? {},
+      ...(action.payload.clearProfile === true ? { activeProfile: null } : {}),
+    };
     case 'GO_BACK': return { ...state, currentScreen: 'main-menu', screenParams: {} };
     default: return state;
   }

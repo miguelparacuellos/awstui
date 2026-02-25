@@ -13,8 +13,11 @@ export function MainMenu() {
   const { activeProfile } = useAppState();
   const dispatch = useAppDispatch();
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (key.escape) { /* no-op: root screen */ }
+    if (input === 'p') {
+      dispatch({ type: 'NAVIGATE', payload: { screen: 'profile-select', clearProfile: true } });
+    }
   });
 
   function handleChange(value: string) {
@@ -28,7 +31,7 @@ export function MainMenu() {
   const header = `aws-tui [${profileLabel}] › Main Menu`;
 
   return (
-    <Layout header={header} footer="↑↓ navigate · enter select">
+    <Layout header={header} footer="↑↓ navigate · enter select · p change profile">
       <Select options={MENU_OPTIONS} onChange={handleChange} />
     </Layout>
   );

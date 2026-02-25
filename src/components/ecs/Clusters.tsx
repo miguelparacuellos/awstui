@@ -59,6 +59,10 @@ export function Clusters() {
       setRefreshKey((k) => k + 1);
       return;
     }
+    if (input === 'm') {
+      dispatch({ type: 'NAVIGATE', payload: { screen: 'main-menu' } });
+      return;
+    }
     if (key.downArrow) {
       const next = Math.min(selectedIndex + 1, clusters.length - 1);
       setSelectedIndex(next);
@@ -88,8 +92,8 @@ export function Clusters() {
     : '';
   const header = `aws-tui [${profileLabel}] › ECS${!isLoading ? ` (${clusters.length} clusters)` : ''}`;
   const footer = clusters.length > 0
-    ? `↑↓ navigate · enter select · ${selectedIndex + 1}/${clusters.length} · r refresh · esc back`
-    : '↑↓ navigate · enter select · r refresh · esc back';
+    ? `↑↓ navigate · enter select · ${selectedIndex + 1}/${clusters.length} · r refresh · m menu · esc back`
+    : '↑↓ navigate · enter select · r refresh · m menu · esc back';
 
   function renderContent() {
     if (isLoading) return <Spinner label="Loading clusters..." />;

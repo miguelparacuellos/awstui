@@ -90,6 +90,10 @@ export function LogEvents() {
       setRefreshKey((k) => k + 1);
       return;
     }
+    if (input === 'm') {
+      dispatch({ type: 'NAVIGATE', payload: { screen: 'main-menu' } });
+      return;
+    }
     if (key.downArrow) {
       setScrollOffset((prev) => Math.min(prev + 1, Math.max(0, events.length - visibleRows)));
       return;
@@ -105,8 +109,8 @@ export function LogEvents() {
     : '';
   const header = `aws-tui [${profileLabel}] › CloudWatch › ${logGroupName} › ${logStreamName}${!isLoading ? ` (${events.length} events)` : ''}`;
   const footer = events.length > 0
-    ? `↑↓ scroll · line ${scrollOffset + 1}/${events.length} · r refresh · esc back`
-    : '↑↓ scroll · r refresh · esc back';
+    ? `↑↓ scroll · line ${scrollOffset + 1}/${events.length} · r refresh · m menu · esc back`
+    : '↑↓ scroll · r refresh · m menu · esc back';
 
   function renderContent() {
     if (isLoading) return <Spinner label="Loading log events..." />;

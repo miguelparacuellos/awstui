@@ -70,6 +70,10 @@ export function LogGroups() {
       setRefreshKey((k) => k + 1);
       return;
     }
+    if (input === 'm') {
+      dispatch({ type: 'NAVIGATE', payload: { screen: 'main-menu' } });
+      return;
+    }
     if (key.downArrow) {
       setSelectedIndex((prev) => Math.min(prev + 1, groups.length - 1));
       return;
@@ -91,7 +95,7 @@ export function LogGroups() {
     ? `${activeProfile.name}${activeProfile.region ? ` · ${activeProfile.region}` : ''}`
     : '';
   const header = `aws-tui [${profileLabel}] › CloudWatch › Log Groups${!isLoading ? ` (${groups.length})` : ''}`;
-  const footer = '↑↓ navigate · enter select · type to filter · r refresh · esc back';
+  const footer = '↑↓ navigate · enter select · type to filter · r refresh · m menu · esc back';
 
   function renderContent() {
     if (isLoading && groups.length === 0) return <Spinner label="Loading log groups..." />;
