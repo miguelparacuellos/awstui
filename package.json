@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Terminal UI tool to manage AWS resources",
   "main": "src/index.tsx",
+  "bin": {
+    "awstui": "./bin/awstui.js"
+  },
   "scripts": {
     "dev": "tsx src/index.tsx"
   },

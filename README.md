@@ -21,7 +21,23 @@ cd aws-tui
 npm install
 ```
 
+Then link the `awstui` command globally:
+
+```sh
+npm link
+```
+
+This creates a global `awstui` command that points to the local source, so any changes you make are reflected immediately without re-linking.
+
 ## Run
+
+From anywhere in your terminal:
+
+```sh
+awstui
+```
+
+Or during development without linking:
 
 ```sh
 npm run dev
