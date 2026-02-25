@@ -4,6 +4,8 @@ import {
   DescribeClustersCommand,
   ListServicesCommand,
   DescribeServicesCommand,
+  ListTasksCommand,
+  DescribeTasksCommand,
   UpdateServiceCommand,
 } from '@aws-sdk/client-ecs';
 import type { Profile } from './profiles.js';
@@ -29,11 +31,21 @@ export type Service = {
 export type Deployment = {
   id: string;
   status: string;
+  taskDefinition: string;
   runningCount: number;
   desiredCount: number;
   pendingCount: number;
+  rolloutState: string | undefined;
+  rolloutStateReason: string | undefined;
   createdAt: Date | undefined;
   updatedAt: Date | undefined;
+};
+
+export type Task = {
+  taskArn: string;
+  lastStatus: string;
+  desiredStatus: string;
+  taskDefinitionArn: string;
 };
 
 export type ServiceDetail = {
@@ -159,13 +171,57 @@ export async function getServiceDetail(
     deployments: (s.deployments ?? []).map((d) => ({
       id: d.id ?? '',
       status: d.status ?? 'UNKNOWN',
+      taskDefinition: d.taskDefinition ?? '',
       runningCount: d.runningCount ?? 0,
       desiredCount: d.desiredCount ?? 0,
       pendingCount: d.pendingCount ?? 0,
+      rolloutState: d.rolloutState,
+      rolloutStateReason: d.rolloutStateReason,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
     })),
   };
+}
+
+export async function listTasks(
+  profile: Profile,
+  clusterArn: string,
+  serviceArn: string,
+): Promise<Task[]> {
+  const client = createClient(profile);
+
+  const taskArns: string[] = [];
+  let nextToken: string | undefined;
+  do {
+    const listResponse = await client.send(
+      new ListTasksCommand({ cluster: clusterArn, serviceName: serviceArn, nextToken }),
+    );
+    taskArns.push(...(listResponse.taskArns ?? []));
+    nextToken = listResponse.nextToken;
+  } while (nextToken);
+
+  if (taskArns.length === 0) return [];
+
+  const CHUNK_SIZE = 100;
+  const chunks: string[][] = [];
+  for (let i = 0; i < taskArns.length; i += CHUNK_SIZE) {
+    chunks.push(taskArns.slice(i, i + CHUNK_SIZE));
+  }
+
+  const responses = await Promise.all(
+    chunks.map((chunk) =>
+      client.send(new DescribeTasksCommand({ cluster: clusterArn, tasks: chunk })),
+    ),
+  );
+
+  return responses.flatMap((r) =>
+    (r.tasks ?? []).map((t) => ({
+      taskArn: t.taskArn ?? '',
+      lastStatus: t.lastStatus ?? 'UNKNOWN',
+      desiredStatus: t.desiredStatus ?? 'UNKNOWN',
+      taskDefinitionArn: t.taskDefinitionArn ?? '',
+    })),
+  );
 }
 
 export async function forceNewDeployment(

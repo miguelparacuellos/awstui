@@ -3,11 +3,14 @@ import { Box, Text, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useAppState, useAppDispatch } from '../../state/index.js';
 import { Layout } from '../Layout.js';
-import { getServiceDetail, type ServiceDetail as ServiceDetailType, type Deployment } from '../../aws/ecs.js';
+import {
+  getServiceDetail,
+  listTasks,
+  type ServiceDetail as ServiceDetailType,
+  type Deployment,
+  type Task,
+} from '../../aws/ecs.js';
 import { ConfirmDeploy } from './ConfirmDeploy.js';
-
-// Layout overhead (10) + task counts box (~8 rows)
-const LAYOUT_OVERHEAD = 18;
 
 function formatRelativeTime(date: Date | undefined): string {
   if (date === undefined) return 'unknown';
@@ -21,20 +24,41 @@ function formatRelativeTime(date: Date | undefined): string {
   return `${days}d ago`;
 }
 
+function shortTaskDef(arn: string): string {
+  const match = arn.match(/task-definition\/(.+)$/);
+  return match ? match[1] : arn;
+}
+
+function progressBar(running: number, desired: number, width = 10): string {
+  if (desired === 0) return '░'.repeat(width);
+  const filled = Math.min(width, Math.round((running / desired) * width));
+  return '█'.repeat(filled) + '░'.repeat(width - filled);
+}
+
 function deploymentStatusColor(status: string): string {
   switch (status) {
     case 'PRIMARY':
-    case 'IN_PROGRESS': return 'cyan';
-    case 'COMPLETED': return 'gray';
+    case 'IN_PROGRESS': return 'yellow';
+    case 'COMPLETED': return 'green';
     case 'FAILED': return 'red';
     default: return 'white';
   }
 }
 
-function taskCountColor(running: number, desired: number, pending: number): string {
-  if (running === 0 && desired > 0) return 'red';
-  if (pending > 0 || running < desired) return 'yellow';
-  return 'green';
+function rolloutStateColor(state: string): string {
+  switch (state) {
+    case 'COMPLETED': return 'green';
+    case 'FAILED': return 'red';
+    case 'IN_PROGRESS': return 'yellow';
+    default: return 'white';
+  }
+}
+
+function groupTasksByStatus(tasks: Task[]): Record<string, number> {
+  return tasks.reduce<Record<string, number>>((acc, t) => {
+    acc[t.lastStatus] = (acc[t.lastStatus] ?? 0) + 1;
+    return acc;
+  }, {});
 }
 
 export function ServiceDetail() {
@@ -46,14 +70,11 @@ export function ServiceDetail() {
   const serviceName = screenParams['serviceName'] ?? '';
 
   const [detail, setDetail] = useState<ServiceDetailType | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [scrollOffset, setScrollOffset] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  const visibleRows = Math.max(1, process.stdout.rows - LAYOUT_OVERHEAD);
 
   useEffect(() => {
     if (!activeProfile || !clusterArn || !serviceArn) return;
@@ -63,11 +84,13 @@ export function ServiceDetail() {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await getServiceDetail(profile, clusterArn, serviceArn);
+        const [result, taskList] = await Promise.all([
+          getServiceDetail(profile, clusterArn, serviceArn),
+          listTasks(profile, clusterArn, serviceArn),
+        ]);
         if (cancelled) return;
         setDetail(result);
-        setSelectedIndex(0);
-        setScrollOffset(0);
+        setTasks(taskList);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to fetch service detail');
@@ -81,7 +104,6 @@ export function ServiceDetail() {
 
   useInput((input, key) => {
     if (showConfirm) return;
-
     if (key.escape) {
       dispatch({
         type: 'NAVIGATE',
@@ -97,18 +119,6 @@ export function ServiceDetail() {
       setShowConfirm(true);
       return;
     }
-    if (key.downArrow && detail) {
-      const next = Math.min(selectedIndex + 1, detail.deployments.length - 1);
-      setSelectedIndex(next);
-      setScrollOffset((prev) => Math.max(prev, next - visibleRows + 1));
-      return;
-    }
-    if (key.upArrow) {
-      const next = Math.max(selectedIndex - 1, 0);
-      setSelectedIndex(next);
-      setScrollOffset((prev) => Math.min(prev, next));
-      return;
-    }
   });
 
   const profileLabel = activeProfile
@@ -117,58 +127,112 @@ export function ServiceDetail() {
   const header = `aws-tui [${profileLabel}] › ECS › ${clusterName} › ${serviceName}`;
   const footer = '↑↓ scroll · d deploy · r refresh · esc back';
 
+  function renderTaskSummary() {
+    const grouped = groupTasksByStatus(tasks);
+    const running = grouped['RUNNING'] ?? 0;
+    const pending = grouped['PENDING'] ?? 0;
+    const stopped = grouped['STOPPED'] ?? 0;
+
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={2} paddingY={1}>
+        <Text bold>Tasks</Text>
+        <Box flexDirection="column" marginTop={1} gap={0}>
+          <Text>
+            <Text color="green" bold>● </Text>
+            <Text color="green" bold>{running}</Text>
+            <Text color="green"> RUNNING</Text>
+          </Text>
+          <Text>
+            <Text color={pending > 0 ? 'yellow' : 'white'}>● </Text>
+            <Text color={pending > 0 ? 'yellow' : 'white'} bold={pending > 0}>{pending}</Text>
+            <Text color={pending > 0 ? 'yellow' : 'white'}> PENDING</Text>
+          </Text>
+          <Text dimColor>
+            {'● '}{stopped}{' STOPPED'}
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  function renderActiveDeployment(deployments: Deployment[]) {
+    const active = deployments.find(
+      (d) => d.status === 'PRIMARY' || d.status === 'IN_PROGRESS',
+    );
+
+    if (!active) {
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={2} paddingY={1}>
+          <Text bold>Active Deployment</Text>
+          <Box marginTop={1}><Text dimColor>No active deployment</Text></Box>
+        </Box>
+      );
+    }
+
+    const bar = progressBar(active.runningCount, active.desiredCount, 10);
+    const taskDef = shortTaskDef(active.taskDefinition);
+    const statusColor = deploymentStatusColor(active.status);
+
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={2} paddingY={1}>
+        <Box gap={2}>
+          <Text bold>Active Deployment</Text>
+          <Text color={statusColor} bold>[{active.status}]</Text>
+        </Box>
+
+        <Box flexDirection="column" marginTop={1} gap={0}>
+          <Box gap={2}>
+            <Text dimColor>Service</Text>
+            <Text bold>{serviceName}</Text>
+          </Box>
+          <Box gap={2}>
+            <Text dimColor>Task def</Text>
+            <Text>{taskDef !== '' ? taskDef : <Text dimColor>unknown</Text>}</Text>
+          </Box>
+        </Box>
+
+        <Box marginTop={1} gap={2} alignItems="center">
+          <Text>
+            <Text dimColor>[</Text>
+            <Text color={active.runningCount === active.desiredCount ? 'green' : 'yellow'}>{bar}</Text>
+            <Text dimColor>]</Text>
+          </Text>
+          <Text bold>{active.runningCount}/{active.desiredCount}</Text>
+          <Text dimColor>tasks running</Text>
+        </Box>
+
+        {active.rolloutState !== undefined && (
+          <Box marginTop={1} gap={2}>
+            <Text dimColor>Rollout</Text>
+            <Text color={rolloutStateColor(active.rolloutState)} bold>{active.rolloutState}</Text>
+          </Box>
+        )}
+
+        <Box marginTop={1} gap={2}>
+          <Text dimColor>Updated</Text>
+          <Text dimColor>{formatRelativeTime(active.updatedAt)}</Text>
+        </Box>
+      </Box>
+    );
+  }
+
   function renderContent() {
     if (isLoading) return <Spinner label="Loading service detail..." />;
     if (error !== null) return <Text color="red">Error: {error}</Text>;
     if (!detail) return <Text color="yellow">Service not found</Text>;
 
-    const color = taskCountColor(detail.runningCount, detail.desiredCount, detail.pendingCount);
-    const visibleDeployments = detail.deployments.slice(scrollOffset, scrollOffset + visibleRows);
-
     return (
       <Box flexDirection="column" gap={1}>
-        <Box flexDirection="column" borderStyle="round" borderColor="gray" padding={1}>
-          <Text bold>Task Counts</Text>
-          <Box gap={2} marginTop={1}>
-            <Text>Running: <Text color={color} bold>{detail.runningCount}</Text></Text>
-            <Text>Desired: <Text bold>{detail.desiredCount}</Text></Text>
-            <Text>Pending: <Text color={detail.pendingCount > 0 ? 'yellow' : 'white'}>{detail.pendingCount}</Text></Text>
-            <Text>Status: <Text color={detail.status === 'ACTIVE' ? 'green' : 'red'}>{detail.status}</Text></Text>
-          </Box>
+        <Box gap={2}>
+          <Text dimColor>Status</Text>
+          <Text color={detail.status === 'ACTIVE' ? 'green' : 'red'} bold>{detail.status}</Text>
+          <Text dimColor>·</Text>
+          <Text dimColor>Desired</Text>
+          <Text bold>{detail.desiredCount}</Text>
         </Box>
 
-        <Box flexDirection="column" borderStyle="round" borderColor="gray" padding={1}>
-          <Text bold>
-            Deployments ({detail.deployments.length}){detail.deployments.length > 0 ? ` · ${selectedIndex + 1}/${detail.deployments.length}` : ''}
-          </Text>
-          {detail.deployments.length === 0 ? (
-            <Text color="yellow" dimColor>No deployments</Text>
-          ) : (
-            <Box marginTop={1} flexDirection="column">
-              {visibleDeployments.map((d, i) => {
-                const actualIndex = scrollOffset + i;
-                return (
-                  <Box key={d.id} gap={2}>
-                    <Text
-                      color={deploymentStatusColor(d.status)}
-                      bold={d.status === 'PRIMARY' || d.status === 'IN_PROGRESS'}
-                    >
-                      {actualIndex === selectedIndex ? '> ' : '  '}
-                      {d.status}
-                    </Text>
-                    <Text>
-                      {d.runningCount}/{d.desiredCount}
-                    </Text>
-                    {d.pendingCount > 0 && (
-                      <Text color="yellow">{d.pendingCount} pending</Text>
-                    )}
-                    <Text dimColor>{formatRelativeTime(d.updatedAt)}</Text>
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
-        </Box>
+        {renderTaskSummary()}
+        {renderActiveDeployment(detail.deployments)}
 
         {showConfirm && (
           <ConfirmDeploy
