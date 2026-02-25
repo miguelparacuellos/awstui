@@ -13,6 +13,7 @@
   "dependencies": {
     "@aws-sdk/client-cloudwatch-logs": "^3.996.0",
     "@aws-sdk/client-ecs": "^3.996.0",
+    "@aws-sdk/client-secrets-manager": "^3.997.0",
     "@inkjs/ui": "^2.0.0",
     "ink": "^6.8.0",
     "ink-scroll-list": "^0.4.1",

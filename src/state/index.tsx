@@ -4,7 +4,8 @@ import type { Profile } from '../aws/profiles.js';
 export type ScreenName =
   | 'profile-select' | 'main-menu'
   | 'cw-log-groups' | 'cw-log-streams' | 'cw-log-events'
-  | 'ecs-clusters' | 'ecs-services' | 'ecs-service-detail';
+  | 'ecs-clusters' | 'ecs-services' | 'ecs-service-detail'
+  | 'secrets-list' | 'secrets-detail';
 
 export type AppState = {
   activeProfile: Profile | null;

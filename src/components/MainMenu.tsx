@@ -7,6 +7,7 @@ import { Layout } from './Layout.js';
 const MENU_OPTIONS = [
   { label: 'CloudWatch Logs', value: 'cloudwatch' },
   { label: 'ECS', value: 'ecs' },
+  { label: 'Secrets Manager', value: 'secrets' },
 ];
 
 export function MainMenu() {
@@ -23,6 +24,7 @@ export function MainMenu() {
   function handleChange(value: string) {
     if (value === 'cloudwatch') dispatch({ type: 'NAVIGATE', payload: { screen: 'cw-log-groups' } });
     else if (value === 'ecs') dispatch({ type: 'NAVIGATE', payload: { screen: 'ecs-clusters' } });
+    else if (value === 'secrets') dispatch({ type: 'NAVIGATE', payload: { screen: 'secrets-list' } });
   }
 
   const profileLabel = activeProfile !== null
